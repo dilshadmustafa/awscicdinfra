@@ -1,0 +1,63 @@
+pipeline {
+    agent { label 'jenkins_node' }
+    parameters {
+            extendedChoice defaultValue: 'myapp-us-east-1', description: 'SELECT THE CODE-DEPLOY-APP-NAME', 
+            multiSelectDelimiter: ',', name: 'CODE_DEPLOY_APP_NAME', quoteValue: false, saveJSONParameterToFile: false, type: 'PT_SINGLE_SELECT', 
+            value: 'myapp-us-east-1,myapp-us-west-1', visibleItemCount: 10
+            extendedChoice defaultValue: 'myapp-us-east-1-blue', description: 'SELECT THE CODE-DEPLOY-DG', 
+            multiSelectDelimiter: ',', name: 'CODE_DEPLOY_DG', quoteValue: false, saveJSONParameterToFile: false, type: 'PT_SINGLE_SELECT', 
+            value: 'myapp-us-east-1-blue, myapp-us-east-1-green, myapp-us-west-1-blue, myapp-us-west-1-green', visibleItemCount: 10
+            extendedChoice defaultValue: 'us-east-1', description: 'SELECT THE REGION', 
+            multiSelectDelimiter: ',', name: 'REGION', quoteValue: false, saveJSONParameterToFile: false, type: 'PT_SINGLE_SELECT', 
+            value: 'us-east-1, us-west-1, eu-west-1, eu-central-1, ap-south-1', visibleItemCount: 10
+            extendedChoice defaultValue: 'myapp-us-east-1-deployments', description: 'SELECT THE S3 BUCKET', 
+            multiSelectDelimiter: ',', name: 'S3_BUCKET', quoteValue: false, saveJSONParameterToFile: false, type: 'PT_SINGLE_SELECT', 
+            value: 'myapp-us-east-1-deployments, myapp-us-west-1-deployments', visibleItemCount: 10
+            extendedChoice defaultValue: 'tar', description: 'SELECT THE BUNDLE TYPE', 
+            multiSelectDelimiter: ',', name: 'BUNDLE_TYPE', quoteValue: false, saveJSONParameterToFile: false, type: 'PT_SINGLE_SELECT', 
+            value: 'tar,zip', visibleItemCount: 10
+            extendedChoice defaultValue: '1234', description: 'SELECT THE BUNDLE VERSION', 
+            multiSelectDelimiter: ',', name: 'BUILD_VERSION', quoteValue: false, saveJSONParameterToFile: false, type: 'PT_TEXTBOX', 
+            value: '1234', visibleItemCount: 10
+            extendedChoice defaultValue: '1234567890', description: 'SELECT THE RANDOM NUMBER', 
+            multiSelectDelimiter: ',', name: 'RANDOM_NUMBER', quoteValue: false, saveJSONParameterToFile: false, type: 'PT_TEXTBOX', 
+            value: '1234567890', visibleItemCount: 10
+    }
+    options { timestamps () }
+    stages {
+        stage('PUSH TO S3') {
+                    steps {
+                        def jobBaseName = "${env.JOB_NAME}".split('/').last()
+                        echo "Job Name (excl. path): ${jobBaseName}"
+                        git branch: 'master', credentialsId: '12345678-1234-1234-1234-123456789012', url: 'git@github.com:myapprepo/myapp-deployments.git'
+                        sh '''
+                            echo $WORKSPACE
+                            cd myapp-prod
+                            wget https://12345678901234.cloudfront.net/${BUILD_VERSION}/${RANDOM_NUMBER}/myapp_build.tar
+                            echo "BUILD_VERSION: ${BUILD_VERSION} and RANDOM_NUMBER: ${RANDOM_NUMBER}" > build_info.txt
+                            cat build_info.txt
+                            cp -rpv * ../
+                            cd ..
+                            rm -rf myapp-prod*
+                            ls -lart
+                            tar -czf "jenkins_cd_myapp/$JOB_BASE_NAME-$BUILD_NUMBER.tar" --exclude .git .
+                            aws s3 mv "jenkins_cd_myapp/$JOB_BASE_NAME-$BUILD_NUMBER.tar" s3://$S3_BUCKET/Builds/$JOB_BASE_NAME/ --quiet
+                            '''
+                    }
+        }
+        stage('DEPLOY CODE') {
+                    steps {
+                        sh '''
+                                chmod +x AWSCodeDeploy.py
+                                export REGION=${REGION}
+                                python3 AWSCodeDeploy.py  -j ${JOB_BASE_NAME} -d ${CODE_DEPLOY_DG} -b ${BUILD_NUMBER} -c ${CODE_DEPLOY_APP_NAME} -s ${S3_BUCKET}
+                           '''
+                    }
+        }
+    }
+    post {
+            always {
+                cleanWs()
+            }
+    }
+}
