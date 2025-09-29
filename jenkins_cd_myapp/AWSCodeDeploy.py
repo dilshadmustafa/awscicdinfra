@@ -10,7 +10,7 @@ awscodedeploy_client=boto3.client(service_name="codedeploy",region_name=os.geten
 
 def is_deployment_inprogress(deployment_group, codedeploy_app_name, s3_bucket):
     response = awscodedeploy_client.get_deployment_group(
-        applicationName = code_app_name,
+        applicationName = codedeploy_app_name,
         deploymentGroupName = deployment_group
     )
     dg = response.get("deploymentGroupInfo")
